@@ -1,215 +1,247 @@
 #!/bin/bash
 
-# --- 顏色和特殊字元定義 ---
-# 使用 tput 確保與各種終端機相容
-# 注意：如果您的系統未安裝 tput，可能需要安裝（例如：sudo apt install ncurses-bin）
-RED=$(tput setaf 1)
-GREEN=$(tput setaf 2)
-YELLOW=$(tput setaf 3)
-BLUE=$(tput setaf 4)
-MAGENTA=$(tput setaf 5)
-CYAN=$(tput setaf 6)
-WHITE=$(tput setaf 7)
-BOLD=$(tput bold)
-RESET=$(tput sgr0)
-CLEAR=$(tput clear)
-CENTER_COLUMNS=$(( $(tput cols) / 2 ))
+# -------------------------
+# 顏色和特殊字元定義
+# -------------------------
+RED="\033[0;31m"
+GREEN="\033[0;32m"
+YELLOW="\033[1;33m"
+CYAN="\033[0;36m"
+MAGENTA="\033[0;35m"
+BOLD="\033[1m"
+RESET="\033[0m"
+# CLEAR="\033[2J\033[H" # 不再使用全螢幕清除
+CLEAR_SCREEN() { tput cup 0 0; tput ed; } # 使用 tput 清除螢幕
 
-# --- 遊戲設定 ---
-MIN_WORD_LENGTH=5
-MAX_WORD_LENGTH=12
-GAME_DURATION=60  # 遊戲時間，單位：秒
+# -------------------------
+# 單字庫和字元集
+# -------------------------
+WORDS=(
+    spit split dispose blast consume attack value score object system
+    linux bash typing practice apple banana window function random
+)
 
-# --- 字元集定義 ---
-ALPHABET="abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
-NUMBERS="0123456789"
-ALPHANUMERIC="$ALPHABET$NUMBERS"
+LETTERS=abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ
+NUMBERS=0123456789
 
-# --- 函數：顯示歡迎畫面 ---
-show_welcome() {
-    $CLEAR
-    echo -e "${BOLD}${CYAN}"
-    echo "======================================================"
-    echo "  🚀 Bash 打字遊戲 🚀"
-    echo "======================================================"
-    echo "  目標：在一分鐘內盡快且準確地輸入螢幕上的字元。"
-    echo "  按 ${BOLD}${YELLOW}Ctrl+C${CYAN} 隨時退出。"
-    echo "======================================================"
-    echo -e "${RESET}"
-    sleep 2
+# -------------------------
+# 遊戲設定變數
+# -------------------------
+MODE="word" 
+DELAY=5     # 挑戰時間 (秒)
+
+# -------------------------
+# 函數：生成隨機一排字詞 (無變動)
+# -------------------------
+generate_row() {
+    row=()
+    case $MODE in
+        word)
+            for i in {1..5}; do
+                row+=("${WORDS[RANDOM % ${#WORDS[@]}]}")
+            done
+            ;;
+        letter)
+            for i in {1..5}; do
+                row+=("${LETTERS:RANDOM%${#LETTERS}:1}")
+            done
+            ;;
+        number)
+            for i in {1..5}; do
+                row+=("${NUMBERS:RANDOM%${#NUMBERS}:1}")
+            done
+            ;;
+        mix)
+            for i in {1..5}; do
+                local len=$((RANDOM % 4 + 3))
+                local s=$(tr -dc 'a-zA-Z0-9' </dev/urandom | head -c $len)
+                row+=("$s")
+            done
+            ;;
+    esac
 }
 
-# --- 函數：處理退出信號 (Ctrl+C) ---
-cleanup_and_exit() {
-    $CLEAR
-    echo -e "\n${BOLD}${RED}👋 遊戲結束。感謝您的遊玩！${RESET}\n"
-    exit 0
-}
-
-# 捕捉中斷信號 (Ctrl+C)
-trap cleanup_and_exit SIGINT
-
-# --- 函數：選擇字元類別 ---
-select_category() {
+# -------------------------
+# 函數：選擇難易度 (使用 CLEAR_SCREEN)
+# -------------------------
+select_difficulty() {
     while true; do
-        $CLEAR
-        echo -e "${BOLD}${MAGENTA}### 選擇打字類別 ###${RESET}"
-        echo -e "${GREEN}1)${RESET} 字母 (a-z, A-Z)"
-        echo -e "${GREEN}2)${RESET} 數字 (0-9)"
-        echo -e "${GREEN}3)${RESET} 混合 (字母與數字)"
-        echo -e "${YELLOW}請輸入選擇 (1-3): ${RESET}\c"
-        read -r category_choice
+        CLEAR_SCREEN # 使用 tput 清除
+        echo -e "${MAGENTA}### 選擇難易度 (決定輸入間隔時間) ###${RESET}"
+        echo -e "${GREEN}1) Easy (8 秒)${RESET}"
+        echo -e "${YELLOW}2) Normal (5 秒)${RESET}"
+        echo -e "${RED}3) Hard (3 秒)${RESET}"
+        read -p "Enter 1-3: " opt
 
-        case $category_choice in
-            1)
-                CHAR_SET=$ALPHABET
-                echo "您選擇了：字母"
-                break
-                ;;
-            2)
-                CHAR_SET=$NUMBERS
-                echo "您選擇了：數字"
-                break
-                ;;
-            3)
-                CHAR_SET=$ALPHANUMERIC
-                echo "您選擇了：混合"
-                break
-                ;;
-            *)
-                echo -e "${RED}無效的選擇。請重新輸入。${RESET}"
-                sleep 1
-                ;;
+        case $opt in
+            1) DELAY=8; break ;;
+            2) DELAY=5; break ;;
+            3) DELAY=3; break ;;
+            *) echo -e "${RED}無效選項!${RESET}"; sleep 1 ;;
         esac
     done
-    sleep 1
 }
 
-# --- 函數：生成隨機字串 ---
-# 參數 1: 字元集, 參數 2: 最小長度, 參數 3: 最大長度
-generate_random_string() {
-    local charset=$1
-    local min_len=$2
-    local max_len=$3
-    local len_range=$(( max_len - min_len + 1 ))
-    # 確保長度在範圍內
-    local string_len=$(( $RANDOM % len_range + min_len ))
-    local random_string=""
+# -------------------------
+# 函數：選擇類別 (使用 CLEAR_SCREEN)
+# -------------------------
+select_mode() {
+    while true; do
+        CLEAR_SCREEN # 使用 tput 清除
+        echo -e "${CYAN}### 選擇練習類別 ###${RESET}"
+        echo "1) Number (數字)"
+        echo "2) Letter (字母)"
+        echo "3) Mix (混合)"
+        echo "4) Word (單字)"
+        read -p "Enter 1-4: " opt
 
-    for i in $(seq 1 $string_len); do
-        local char_index=$(( $RANDOM % ${#charset} ))
-        random_string+="${charset:$char_index:1}"
+        case $opt in
+            1) MODE="number"; break ;;
+            2) MODE="letter"; break ;;
+            3) MODE="mix"; break ;;
+            4) MODE="word"; break ;;
+            *) echo -e "${RED}無效選項!${RESET}"; sleep 1 ;;
+        esac
     done
-
-    echo "$random_string"
 }
 
-# --- 函數：主遊戲迴圈 ---
+# -------------------------
+# 函數：畫框線 (修改: 不再清除整個螢幕，只在頂部繪製)
+# -------------------------
+draw_frame() {
+    tput cup 0 0 # 移動游標到左上角 (0, 0)
+    tput ed # 清除到螢幕底部
+
+    # 計算準確率顏色
+    local acc_color=$YELLOW
+    if [ $SUM -gt 0 ]; then
+        if [ $ACC -ge 80 ]; then acc_color=$GREEN; fi
+        if [ $ACC -lt 50 ]; then acc_color=$RED; fi
+    fi
+    
+    echo -e "${BOLD}=====================================================================${RESET}" # Line 1
+    echo -e "| ${CYAN}${BOLD}提示：按 Ctrl+C 隨時退出遊戲。${RESET}                                            |" # Line 2
+    echo -e "| Please type ${CYAN}one of the words${RESET} before the time runs out!         |" # Line 3
+    echo -e "| Challenge Time: ${MAGENTA}${DELAY}s${RESET}                                                    |" # Line 4
+    echo -e "=====================================================================" # Line 5
+    
+    # 狀態列 (Line 6)
+    printf "| Playtime: ${YELLOW}%-5s${RESET}  Accuracy: ${acc_color}%-5s%%${RESET}  Sum: ${GREEN}%-5s${RESET}                                    |\n" \
+           "${TIME}s" "$ACC" "$SUM"
+
+    echo "=====================================================================" # Line 7
+    
+    # 題目列 (Line 8)
+    printf "| "
+    printf "${BOLD}${CYAN}%s${RESET}   " "${row[@]}"
+    local space_needed=$(( 65 - ${#row[*]} * 7 ))
+    printf "%-${space_needed}s|\n" "" 
+
+    echo "=====================================================================" # Line 9
+    
+    # 輸入列的標籤 (Line 10)
+    tput cup 10 2
+    printf "| Your input: "
+    tput cup 10 16   # 游標定位在 Your input: 後面
+
+    # 注意：我們在這裡不打印換行，讓下一行輸出在標籤旁邊
+
+    # 確保接下來的結果行被清除 (Line 11)
+    tput el
+}
+
+# -------------------------
+# 函數：處理退出信號 (Ctrl+C)
+# -------------------------
+cleanup_and_exit() {
+    tput cnorm # 顯示游標
+    tput cup 0 0
+    tput ed # 清除螢幕
+    echo -e "\n${RED}👋 遊戲結束。總結結果：${RESET}"
+    echo -e "遊玩時間: ${TIME} 秒"
+    echo -e "總題數: ${SUM}"
+    echo -e "答對數: ${RIGHT}"
+    echo -e "最終準確率: ${ACC}%"
+    echo -e "\n${CYAN}感謝您的遊玩！${RESET}\n"
+    exit 0
+}
+trap cleanup_and_exit SIGINT
+
+# -------------------------
+# 遊戲主體
+# -------------------------
 start_game() {
-    local start_time=$(date +%s)
-    local end_time=$(( start_time + GAME_DURATION ))
-    local total_typed_chars=0
-    local correct_chars=0
-    local total_words=0
-    local elapsed_time=0
+    SUM=0
+    RIGHT=0
+    TIME=0
+    ACC=0
+    
+    tput civis # 隱藏游標
+    local game_start_time=$(date +%s) # 記錄遊戲開始的絕對時間
 
-    $CLEAR
-    echo -e "${BOLD}${BLUE}### 遊戲開始！ (持續 ${GAME_DURATION} 秒) ###${RESET}"
-    echo -e "${CYAN}準備好了嗎...${RESET}"
-    sleep 2
-
-    while [ $(date +%s) -lt $end_time ]; do
-        elapsed_time=$(( $(date +%s) - start_time ))
-        local remaining_time=$(( GAME_DURATION - elapsed_time ))
-
-        if [ $remaining_time -le 0 ]; then
-            break
-        fi
-
-        # 1. 生成並顯示目標字串
-        TARGET_STRING=$(generate_random_string "$CHAR_SET" $MIN_WORD_LENGTH $MAX_WORD_LENGTH)
+    while true; do
+        generate_row
+        draw_frame
         
-        $CLEAR
-        echo -e "${BOLD}${BLUE}### Bash 打字遊戲 ###${RESET}"
-        echo -e "${YELLOW}剩餘時間: ${remaining_time} 秒${RESET}"
-        echo "------------------------------------------------------"
-        echo -e "${BOLD}${GREEN}🎯 請輸入: ${RESET}"
-        echo -e "${BOLD}${CYAN}> $TARGET_STRING <${RESET}"
-        echo "------------------------------------------------------"
+        # 移動游標到輸入區域 (第 10 行，第 15 列)，開始讀取
         
-        # 2. 獲取使用者輸入
-        echo -e "${BOLD}您的輸入: ${WHITE}\c"
-        read -r USER_INPUT
         
-        # 3. 檢查輸入結果
-        if [ "$USER_INPUT" == "$TARGET_STRING" ]; then
-            echo -e "${GREEN}✅ 正確！${RESET}"
-            total_words=$(( total_words + 1 ))
-            total_typed_chars=$(( total_typed_chars + ${#TARGET_STRING} ))
-            correct_chars=$(( correct_chars + ${#TARGET_STRING} ))
+        local input_start_time=$(date +%s)
+        # 關鍵：read -r -t $DELAY input 會在 tput cup 指定的位置等待輸入，且即時顯示字元。
+        read -r -t $DELAY input
+        local input_end_time=$(date +%s)
+        
+        # 清除輸入行 (Line 10) 和結果行 (Line 11)
+        tput cup 10 0; tput el # 清除輸入行
+        tput cup 11 0; tput el # 清除結果行
+
+        local round_time_spent=0
+        
+        # 1. 檢查是否因超時而退出 ($? -ne 0)
+        if [[ $? -ne 0 ]]; then
+            # 超時處理
+            tput cup 11 15 # 移動游標到結果行
+            echo -e "${RED}${BOLD}TIMEOUT! (超時)${RESET}"
+            round_time_spent=$DELAY
+            SUM=$((SUM + 1))
         else
-            echo -e "${RED}❌ 錯誤！${RESET}"
-            # 計算錯誤字元數
-            local min_len=$(( ${#TARGET_STRING} < ${#USER_INPUT} ? ${#TARGET_STRING} : ${#USER_INPUT} ))
-            local temp_correct=0
+            # 2. 玩家在時間內輸入
+            round_time_spent=$(( input_end_time - input_start_time ))
+            SUM=$((SUM + 1))
             
-            for ((i=0; i<$min_len; i++)); do
-                if [ "${TARGET_STRING:$i:1}" == "${USER_INPUT:$i:1}" ]; then
-                    temp_correct=$(( temp_correct + 1 ))
+            match=false
+            for w in "${row[@]}"; do
+                if [[ "$input" == "$w" ]]; then
+                    match=true
+                    break
                 fi
             done
-            # 總字元數 += 目標字串長度 (計算準確率時，分母是目標字串的長度總和)
-            total_typed_chars=$(( total_typed_chars + ${#TARGET_STRING} ))
-            correct_chars=$(( correct_chars + temp_correct ))
+
+            # 3. 顯示即時驗證結果
+            tput cup 11 15 # 移動游標到結果行
+            if $match; then
+                echo -e "${GREEN}${BOLD}right! (正確)${RESET}"
+                RIGHT=$((RIGHT + 1))
+            else
+                echo -e "${RED}${BOLD}wrong! (錯誤)${RESET}"
+            fi
+        fi
+
+        # 4. 更新狀態
+        TIME=$(( ( $(date +%s) - game_start_time ) )) # 總時間為絕對時間差
+        
+        if [ $SUM -gt 0 ]; then
+            ACC=$(( RIGHT * 100 / SUM ))
         fi
         
-        sleep 0.5 # 讓使用者看到結果
+        # 讓玩家看到結果
+        sleep 1
     done
-
-    show_results $total_typed_chars $correct_chars $total_words $GAME_DURATION
 }
 
-# --- 函數：顯示結果 ---
-show_results() {
-    local total_typed_chars=$1
-    local correct_chars=$2
-    local total_words=$3
-    local duration=$4 # 以秒為單位
-    
-    $CLEAR
-    echo -e "${BOLD}${YELLOW}===================================================${RESET}"
-    echo -e "${BOLD}${YELLOW}                 🏆 遊戲結果 🏆                  ${RESET}"
-    echo -e "${BOLD}${YELLOW}===================================================${RESET}"
-
-    # 1. 計算 WPM (Word Per Minute): 假設一個單詞平均 5 個字元
-    if [ $duration -gt 0 ]; then
-        # 注意：WPM 需要浮點數運算，Bash 使用 bc 實現
-        local wpm=$(echo "scale=2; ($correct_chars / 5) / ($duration / 60)" | bc)
-    else
-        local wpm="0.00"
-    fi
-    
-    # 2. 計算準確率 (Accuracy)
-    local accuracy="0.00"
-    if [ $total_typed_chars -gt 0 ]; then
-        accuracy=$(echo "scale=2; ($correct_chars * 100) / $total_typed_chars" | bc)
-    fi
-    
-    echo -e "${BOLD}${GREEN}✔ 正確字元數: ${correct_chars}${RESET}"
-    echo -e "${BOLD}${CYAN}Σ 總字元數 (目標): ${total_typed_chars}${RESET}"
-    echo -e "${BOLD}${MAGENTA}🎯 完成字串數: ${total_words}${RESET}"
-    echo "---"
-    echo -e "${BOLD}${YELLOW}🚀 準確率 (Accuracy): ${accuracy}%${RESET}"
-    echo -e "${BOLD}${YELLOW}⏱ 每分鐘單詞數 (WPM): ${wpm}${RESET}"
-    echo "---"
-    
-    echo -e "\n${BOLD}按 ${GREEN}Enter${RESET} 退出遊戲... \c"
-    read -r
-    cleanup_and_exit
-}
-
-
-# --- 主程式流程 ---
-show_welcome
-select_category
+# -------------------------
+# 主流程
+# -------------------------
+select_difficulty
+select_mode
 start_game
