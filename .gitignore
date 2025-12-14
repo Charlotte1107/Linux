@@ -1,0 +1,15 @@
+# Node
+node_modules/
+
+# Env
+.env
+
+# MongoDB data (if any)
+mongo-backup/
+dump/
+
+# Logs
+*.log
+
+# OS
+.DS_Store

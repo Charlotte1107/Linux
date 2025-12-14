@@ -1,21 +1,13 @@
 #!/bin/bash
 
-echo "===== User Registration ====="
+echo "===== User Register ====="
+read -p "Username: " username
+read -s -p "Password: " password
+echo ""
 
-# 輸入帳號
-echo -n "Create Username: "
-read username
+response=$(curl -s -X POST http://localhost:3000/register \
+  -H "Content-Type: application/json" \
+  -d "{\"username\":\"$username\",\"password\":\"$password\"}")
 
-# 輸入密碼（不顯示）
-echo -n "Create Password: "
-read -s password
-echo
-
-# 呼叫後端 API 進行註冊
-response=$(curl -s -X POST http://localhost:3000/api/auth/register \
--H "Content-Type: application/json" \
--d "{\"username\":\"$username\",\"password\":\"$password\"}")
-
-echo
 echo "Server response: $response"
-echo
+
