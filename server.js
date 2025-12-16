@@ -1,8 +1,8 @@
 const express = require("express");
-const fs = require("fs");
 const { exec } = require("child_process");
 const mongoose = require("mongoose");
-
+const bcrypt = require("bcrypt");
+const bannedIPs = new Set();
 const app = express();
 app.use(express.json());
 
@@ -18,8 +18,9 @@ mongoose
    User Model
 ===================== */
 const userSchema = new mongoose.Schema({
-  username: String,
+  username: { type: String, unique: true },
   password: String,
+  createdAt: { type: Date, default: Date.now }
 });
 
 const User = mongoose.model("User", userSchema);
@@ -32,6 +33,7 @@ const failMap = {}; // { ip: count }
 
 function banIP(ip) {
   console.log(`Blocking IP via UFW: ${ip}`);
+  bannedIPs.add(ip); 
   exec(`sudo ufw deny from ${ip}`, (err) => {
     if (err) {
       console.error("UFW error:", err.message);
@@ -45,6 +47,13 @@ function banIP(ip) {
 app.post("/register", async (req, res) => {
   const { username, password } = req.body;
 
+  const ip =
+    req.headers["x-forwarded-for"] ||
+    req.socket.remoteAddress.replace("::ffff:", "");
+
+  if (bannedIPs.has(ip)) {
+    return res.json({ message: "IP is blocked" });
+  }
   if (!username || !password) {
     return res.json({ message: "Username and password required" });
   }
@@ -57,9 +66,10 @@ app.post("/register", async (req, res) => {
     }
 
     // 建立新使用者
+   const hashedPassword = await bcrypt.hash(password, 10);
     const newUser = new User({
       username,
-      password, // 目前先用明碼（之後可加 bcrypt）
+      password:hashedPassword, 
     });
 
     await newUser.save();
@@ -68,7 +78,6 @@ app.post("/register", async (req, res) => {
     res.json({ message: "Register successful" });
   } catch (err) {
     console.error("Register error:", err);
-    res涉及
     res.status(500).json({ message: "Server error" });
   }
 });
@@ -84,23 +93,33 @@ app.post("/login", async (req, res) => {
     req.socket.remoteAddress.replace("::ffff:", "");
 
   try {
-    // 🔑 查 MongoDB 使用者
+    // 查 MongoDB 使用者
     const user = await User.findOne({ username });
 
-    // ❌ 帳號不存在 or 密碼錯誤
-    if (!user || user.password !== password) {
-      failMap[ip] = (failMap[ip] || 0) + 1;
-      console.log(`LOGIN FAIL from ${ip} (${failMap[ip]} times)`);
+    if (!user) {
+  failMap[ip] = (failMap[ip] || 0) + 1;
+  console.log(`LOGIN FAIL from ${ip} (${failMap[ip]} times)`);
+ if (failMap[ip] >= FAIL_LIMIT) {
+    banIP(ip);
+    return res.json({ message: "IP banned due to multiple failures" });
+  } 
+ return res.json({ message: "Login failed" });
+} 
 
-      if (failMap[ip] >= FAIL_LIMIT) {
-        banIP(ip);
-        return res.json({
-          message: "IP banned due to multiple failures",
-        });
-      }
+    // 對加密密碼
+const isMatch = await bcrypt.compare(password, user.password);
 
-      return res.json({ message: "Login failed" });
-    }
+if (!isMatch) {
+  failMap[ip] = (failMap[ip] || 0) + 1;
+  console.log(`LOGIN FAIL from ${ip} (${failMap[ip]} times)`);
+
+  if (failMap[ip] >= FAIL_LIMIT) {
+    banIP(ip);
+    return res.json({ message: "IP banned due to multiple failures" });
+  }
+
+  return res.json({ message: "Login failed" });
+}
 
     // ✅ 登入成功
     delete failMap[ip];
@@ -116,7 +135,7 @@ app.post("/login", async (req, res) => {
 /* =====================
    Start Server
 ===================== */
-app.listen(3000, () => {
+app.listen(3000,"0.0.0.0", () => {
   console.log("Server running on port 3000");
 });
 
