@@ -91,7 +91,7 @@ app.post("/login", async (req, res) => {
   const ip =
     req.headers["x-forwarded-for"] ||
     req.socket.remoteAddress.replace("::ffff:", "");
-
+   if (bannedIPs.has(ip)) return res.status(403).json({ message: "IP is blocked" });
   try {
     // 查 MongoDB 使用者
     const user = await User.findOne({ username });
