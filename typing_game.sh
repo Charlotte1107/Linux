@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # =====================================================
-# Bash 打字遊戲 + MongoDB 紀錄版（可直接執行）
+# Bash 打字遊戲（含遊戲結束結果）
 # =====================================================
 
 # ---------- 顏色 ----------
@@ -15,8 +15,6 @@ RESET="\033[0m"
 
 CLEAR_SCREEN() { tput cup 0 0; tput ed; }
 
-
-
 # ---------- 題庫 ----------
 WORDS=(spit split dispose blast consume attack value score object system linux bash typing practice apple banana window function random)
 LETTERS=abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ
@@ -27,6 +25,7 @@ MODE="word"
 DELAY=5
 DIFFICULTY="Normal"
 PLAYER=""
+GAME_LIMIT=60   # ★ 遊戲總時間（秒）
 
 # ---------- 玩家登入 ----------
 login_player() {
@@ -89,24 +88,39 @@ select_mode() {
 draw_frame() {
   tput cup 0 0; tput ed
   echo "================================================="
-  echo "| Player:  $PLAYER   Ctrl+C 離開              |"
+  echo "| Player: $PLAYER     Ctrl+C 離開               |"
   echo "| Difficulty: $DIFFICULTY   Mode: $MODE           |"
   echo "================================================="
-  printf "| Time:%-4s Total:%-3s Right:%-3s Acc:%-3s%% |\n" "$TIME" "$SUM" "$RIGHT" "$ACC"
+  printf "| Time:%-4s/%-3s Total:%-3s Right:%-3s Acc:%-3s%% |\n" "$TIME" "$GAME_LIMIT" "$SUM" "$RIGHT" "$ACC"
   echo "================================================="
   printf "| "; printf "%s  " "${row[@]}"; echo
   echo "================================================="
   tput cup 8 2; printf "Your input: "
 }
 
-
+# ---------- 結果畫面 ----------
+show_result() {
+  tput cnorm
+  CLEAR_SCREEN
+  echo -e "${BOLD}${CYAN}===== 遊戲結果 =====${RESET}"
+  echo
+  echo "玩家名稱：$PLAYER"
+  echo "模式：$MODE"
+  echo "難度：$DIFFICULTY"
+  echo "遊玩時間：$TIME 秒"
+  echo "總題數：$SUM"
+  echo "答對題數：$RIGHT"
+  echo "命中率：$ACC %"
+  echo
+  echo -e "${GREEN}感謝遊玩！${RESET}"
+  echo
+  read -p "按 Enter 鍵結束..."
+  exit 0
+}
 
 # ---------- Ctrl+C ----------
 cleanup_and_exit() {
-  tput cnorm
-  CLEAR_SCREEN
-  echo -e "${YELLOW}遊戲結束，感謝遊玩！${RESET}"
-  exit 0
+  show_result
 }
 trap cleanup_and_exit SIGINT
 
@@ -117,6 +131,13 @@ start_game() {
   start_time=$(date +%s)
 
   while true; do
+    TIME=$(( $(date +%s) - start_time ))
+
+    # ★ 時間到 → 結束遊戲
+    if (( TIME >= GAME_LIMIT )); then
+      show_result
+    fi
+
     generate_row
     draw_frame
     read -r -t $DELAY input
@@ -138,7 +159,6 @@ start_game() {
       tput cup 9 2; echo -e "${RED}⌛ 超時${RESET}"
     fi
 
-    TIME=$(( $(date +%s) - start_time ))
     ACC=$(( RIGHT * 100 / SUM ))
     sleep 1
   done
