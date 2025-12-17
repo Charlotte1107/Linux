@@ -41,6 +41,7 @@ function banIP(ip) {
   });
 }
 
+
 /* =====================
    Register API
 ===================== */
@@ -106,6 +107,7 @@ app.post("/login", async (req, res) => {
  return res.json({ message: "Login failed" });
 } 
 
+
     // 對加密密碼
 const isMatch = await bcrypt.compare(password, user.password);
 
@@ -132,10 +134,12 @@ if (!isMatch) {
   }
 });
 
+
 /* =====================
    Start Server
 ===================== */
 app.listen(3000,"0.0.0.0", () => {
   console.log("Server running on port 3000");
 });
+
 
