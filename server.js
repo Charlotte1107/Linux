@@ -69,9 +69,10 @@ app.post("/register", async (req, res) => {
     // 建立新使用者
    const hashedPassword = await bcrypt.hash(password, 10);
     const newUser = new User({
-      username,
+ 
+     username,
       password:hashedPassword, 
-    });
+  });
 
     await newUser.save();
 
