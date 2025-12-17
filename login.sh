@@ -1,23 +1,22 @@
 #!/bin/bash
 
-LOGFILE="logs/login.log"
-USER="student"
-PASS="1234"
+LOGFILE="/var/log/node-login/login.log"
 
-echo "==== Secure Login ===="
-read -p "Username: " input_user
-read -s -p "Password: " input_pass
-echo
+echo "===== User Login ====="
+read -p "Username: " username
+read -s -p "Password: " password
+echo ""
 
-timestamp=$(date "+%Y-%m-%d %H:%M:%S")
+# 呼叫 Node.js API（注意：路徑要和 server.js 一致）
+response=$(curl -s -X POST http://localhost:3000/login \
+    -H "Content-Type: application/json" \
+    -d "{\"username\":\"$username\", \"password\":\"$password\"}")
 
-# Compare
-if [[ "$input_user" == "$USER" && "$input_pass" == "$PASS" ]]; then
-    echo "$timestamp LOGIN SUCCESS user=$input_user" >> $LOGFILE
-    echo "Login successful."
-    exit 0
+echo "Server response: $response"
+
+if [[ "$response" == *"success"* ]]; then
+    echo " Login success"
 else
-    echo "$timestamp LOGIN FAILED user=$input_user" >> $LOGFILE
-    echo "Login failed."
-    exit 1
+    echo " Login failed"
 fi
+
